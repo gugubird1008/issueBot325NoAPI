@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # 获取完整的 Git 历史
 
       - name: Configure Git identity
         run: |
@@ -27,13 +29,15 @@ jobs:
           echo "Created from issue #${{ github.event.issue.number }}" > issue-${{ github.event.issue.number }}.txt
           git add issue-${{ github.event.issue.number }}.txt
           git commit -m "Create PR from issue #${{ github.event.issue.number }}"
-          git push origin issue-${{ github.event.issue.number }}
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Create PR from issue #${{ github.event.issue.number }}"
           title: 'Convert issue #${{ github.event.issue.number }} to PR'
           body: 'This PR is created from issue #${{ github.event.issue.number }}'
           branch: issue-${{ github.event.issue.number }}
           base: main
+          branch-suffix: none  # 避免自动添加后缀
+          push-to-remote: true  # 确保分支被推送
