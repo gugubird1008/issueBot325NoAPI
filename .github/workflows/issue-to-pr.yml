@@ -23,10 +23,9 @@ jobs:
           echo "Created from issue #${{ github.event.issue.number }}" > issue-${{ github.event.issue.number }}.txt
           git add issue-${{ github.event.issue.number }}.txt
           git commit -m "Create PR from issue #${{ github.event.issue.number }}"
-          git push origin issue-${{ github.event.issue.number }}
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v3
+        uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           title: 'Convert issue #${{ github.event.issue.number }} to PR'
