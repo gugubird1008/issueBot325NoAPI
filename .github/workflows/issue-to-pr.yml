@@ -39,5 +39,3 @@ jobs:
           body: 'This PR is created from issue #${{ github.event.issue.number }}'
           branch: issue-${{ github.event.issue.number }}
           base: main
-          branch-suffix: none  # 避免自动添加后缀
-          push-to-remote: true  # 确保分支被推送
