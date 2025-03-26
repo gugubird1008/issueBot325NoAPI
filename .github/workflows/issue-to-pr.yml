@@ -23,12 +23,155 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Create a new branch and commit a change
+      - name: Get Issue Body
+        uses: actions/github-script@v6
+        id: get-issue-body
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issue = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ github.event.issue.number }}
+            });
+            return issue.data.body;
+
+      - name: Parse Issue Content
+        id: parse-issue
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issueBody = `${{ steps.get-issue-body.outputs.result }}`;
+            const fields = {
+              "Data Owner Name": "",
+              "Data Owner Country/Region": "",
+              "Data Owner Industry": "",
+              "Website": "",
+              "Social Media Handle": "",
+              "Social Media Type": "",
+              "What is your role related to the dataset": "",
+              "Total amount of DataCap being requested": "",
+              "Expected size of single dataset (one copy)": "",
+              "Number of replicas to store": "",
+              "Weekly allocation of DataCap requested": "",
+              "On-chain address for first allocation": "",
+              "Data Type of Application": "",
+              "Custom multisig": "",
+              "Identifier": "",
+              "Share a brief history of your project and organization": "",
+              "Is this project associated with other projects/ecosystem stakeholders?": "",
+              "If answered yes, what are the other projects/ecosystem stakeholders": "",
+              "Describe the data being stored onto Filecoin": "",
+              "Where was the data currently stored in this dataset sourced from": "",
+              "If you answered \"Other\" in the previous question, enter the details here": "",
+              "If you are a data preparer. What is your location (Country/Region)": "",
+              "If you are a data preparer, how will the data be prepared? Please include tooling used and technical details?": "",
+              "If you are not preparing the data, who will prepare the data?  (Provide name and business)": "",
+              "Has this dataset been stored on the Filecoin network before? If so, please explain and make the case why you would like to store this dataset again to the network. Provide details on preparation and/or SP distribution": "",
+              "Please share a sample of the data": "",
+              "Confirm that this is a public dataset that can be retrieved by anyone on the Network": "",
+              "If you chose not to confirm, what was the reason": "",
+              "What is the expected retrieval frequency for this data": "",
+              "For how long do you plan to keep this dataset stored on Filecoin": "",
+              "In which geographies do you plan on making storage deals": "",
+              "How will you be distributing your data to storage providers": "",
+              "How did you find your storage providers": "",
+              "If you answered \"Others\" in the previous question, what is the tool or platform you used": "",
+              "Please list the provider IDs and location of the storage providers you will be working with.": "",
+              "How do you plan to make deals to your storage providers": "",
+              "If you answered \"Others/custom tool\" in the previous question, enter the details here": "",
+              "Can you confirm that you will follow the Fil+ guideline": ""
+            };
+
+            // 提取字段值
+            for (const field in fields) {
+              const regex = new RegExp(`\\*\\*${field}:?\\*\\*\\s*(.+?)(?=\\n\\s*\\n|\\n\\*\\*|\\Z)`, 'is');
+              const match = issueBody.match(regex);
+              if (match) {
+                fields[field] = match[1].trim();
+              }
+            }
+
+            // 处理 Custom multisig 的特殊情况
+            fields["Custom multisig"] = issueBody.includes("- [x] Use Custom Multisig") ? "Yes" : "No";
+
+            // 返回解析后的字段
+            return fields;
+
+      - name: Create a new branch
         run: |
           git checkout -b issue-${{ github.event.issue.number }}
-          echo "Created from issue #${{ github.event.issue.number }}" > issue-${{ github.event.issue.number }}.txt
-          git add issue-${{ github.event.issue.number }}.txt
-          git commit -m "Create PR from issue #${{ github.event.issue.number }}"
+
+      - name: Create applications directory if not exists
+        run: |
+          mkdir -p applications
+
+      - name: Create JSON file
+        run: |
+          ON_CHAIN_ADDRESS="${{ fromJson(steps.parse-issue.outputs.result)['On-chain address for first allocation'] }}"
+          if [ -z "$ON_CHAIN_ADDRESS" ]; then
+            echo "On-chain address is empty, cannot create JSON file."
+            exit 1
+          fi
+          JSON_FILE="applications/$ON_CHAIN_ADDRESS.json"
+          ISSUE_NUMBER=${{ github.event.issue.number }}
+          # 生成 JSON 内容
+          cat << EOF > $JSON_FILE
+          {
+            "Version": "1.3",
+            "ID": "$ON_CHAIN_ADDRESS",
+            "Issue Number": "$ISSUE_NUMBER",
+            "Client": {
+              "Name": "${{ fromJson(steps.parse-issue.outputs.result)['Data Owner Name'] }}",
+              "Region": "${{ fromJson(steps.parse-issue.outputs.result)['Data Owner Country/Region'] }}",
+              "Industry": "${{ fromJson(steps.parse-issue.outputs.result)['Data Owner Industry'] }}",
+              "Website": "${{ fromJson(steps.parse-issue.outputs.result)['Website'] }}",
+              "Social Media": "${{ fromJson(steps.parse-issue.outputs.result)['Social Media Handle'] }}",
+              "Social Media Type": "${{ fromJson(steps.parse-issue.outputs.result)['Social Media Type'] }}",
+              "Role": "${{ fromJson(steps.parse-issue.outputs.result)['What is your role related to the dataset'] }}"
+            },
+            "Project": {
+              "Brief history of your project and organization": "${{ fromJson(steps.parse-issue.outputs.result)['Share a brief history of your project and organization'] }}",
+              "Is this project associated with other projects/ecosystem stakeholders?": "${{ fromJson(steps.parse-issue.outputs.result)['Is this project associated with other projects/ecosystem stakeholders?'] }}",
+              "Describe the data being stored onto Filecoin": "${{ fromJson(steps.parse-issue.outputs.result)['Describe the data being stored onto Filecoin'] }}",
+              "Where was the data currently stored in this dataset sourced from": "${{ fromJson(steps.parse-issue.outputs.result)['Where was the data currently stored in this dataset sourced from'] }}",
+              "How do you plan to prepare the dataset": "${{ fromJson(steps.parse-issue.outputs.result)['If you are a data preparer, how will the data be prepared? Please include tooling used and technical details?'] || fromJson(steps.parse-issue.outputs.result)['If you are not preparing the data, who will prepare the data?  (Provide name and business)'] }}",
+              "Please share a sample of the data (a link to a file, an image, a table, etc., are good ways to do this.)": "${{ fromJson(steps.parse-issue.outputs.result)['Please share a sample of the data'] }}",
+              "Confirm that this is a public dataset that can be retrieved by anyone on the network (i.e., no specific permissions or access rights are required to view the data)": "${{ fromJson(steps.parse-issue.outputs.result)['Confirm that this is a public dataset that can be retrieved by anyone on the Network'] }}",
+              "What is the expected retrieval frequency for this data": "${{ fromJson(steps.parse-issue.outputs.result)['What is the expected retrieval frequency for this data'] }}",
+              "For how long do you plan to keep this dataset stored on Filecoin": "${{ fromJson(steps.parse-issue.outputs.result)['For how long do you plan to keep this dataset stored on Filecoin'] }}",
+              "In which geographies do you plan on making storage deals": "${{ fromJson(steps.parse-issue.outputs.result)['In which geographies do you plan on making storage deals'] }}",
+              "How will you be distributing your data to storage providers": "${{ fromJson(steps.parse-issue.outputs.result)['How will you be distributing your data to storage providers'] }}",
+              "Please list the provider IDs and location of the storage providers you will be working with. Note that it is a requirement to list a minimum of 5 unique provider IDs, and that your client address will be verified against this list in the future": "${{ fromJson(steps.parse-issue.outputs.result)['Please list the provider IDs and location of the storage providers you will be working with.'] }}",
+              "Can you confirm that you will follow the Fil+ guideline (Data owner should engage at least 4 SPs and no single SP ID should receive >30% of a client's allocated DataCap)": "${{ fromJson(steps.parse-issue.outputs.result)['Can you confirm that you will follow the Fil+ guideline'] }}"
+            },
+            "Datacap": {
+              "Type": "ldn-v3",
+              "Data Type": "${{ fromJson(steps.parse-issue.outputs.result)['Data Type of Application'] }}",
+              "Total Requested Amount": "${{ fromJson(steps.parse-issue.outputs.result)['Total amount of DataCap being requested'] }}",
+              "Single Size Dataset": "${{ fromJson(steps.parse-issue.outputs.result)['Expected size of single dataset (one copy)'] }}",
+              "Replicas": ${{ fromJson(steps.parse-issue.outputs.result)['Number of replicas to store'] }},
+              "Weekly Allocation": "${{ fromJson(steps.parse-issue.outputs.result)['Weekly allocation of DataCap requested'] }}"
+            },
+            "Lifecycle": {
+              "State": "Submitted",
+              "Validated At": "",
+              "Validated By": "",
+              "Active": false,
+              "Updated At": "",
+              "Active Request ID": "",
+              "On Chain Address": "$ON_CHAIN_ADDRESS",
+              "Multisig Address": "${{ fromJson(steps.parse-issue.outputs.result)['Custom multisig'] }}"
+            },
+            "Allocation Requests": []
+          }
+          EOF
+
+      - name: Commit and push changes
+        run: |
+          git add applications/*.json
+          git commit -m "Add JSON file for issue #${{ github.event.issue.number }}"
           git push origin issue-${{ github.event.issue.number }}
 
       - name: Create Pull Request
@@ -36,7 +179,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "Create PR from issue #${{ github.event.issue.number }}"
-          title: 'Convert issue #${{ github.event.issue.number }} to PR'
-          body: 'This PR is created from issue #${{ github.event.issue.number }}'
+          title: "Convert issue #${{ github.event.issue.number }} to PR"
+          body: "This PR is created from issue #${{ github.event.issue.number }}"
           branch: issue-${{ github.event.issue.number }}
           base: main
